@@ -7,7 +7,8 @@ import {
   DEFAULT_BACKOFF_OPTIONS,
   withBackoff,
 } from '../../utils/backoff.js'
-import { isEventProcessed, markEventProcessed, checkTimestampTolerance } from './idempotency.js'
+import { isEventProcessed, markEventProcessed, checkTimestampTolerance, reserveWebhookEvent } from './idempotency.js'
+import { RedisCircuitBreakerError } from '../../redis.js'
 import { saveDeadLetter } from './deadLetterQueue.js'
 import { webhookRetryAttempts, webhookRetryExhaustedTotal } from '../../metrics.js'
 import { hasForbiddenKeys } from '../../middleware/prototypePollution.js'
@@ -203,11 +204,18 @@ async function processRazorpayEvent(event: RazorpayEvent): Promise<{ status: str
   if (!tsCheck.valid) {
     throw new RazorpayWebhookError('invalid_timestamp', 400, tsCheck.reason ?? 'Event timestamp out of tolerance')
   }
-  if (isEventProcessed(event.id)) {
-    logger.info(JSON.stringify({ type: 'razorpay_webhook_duplicate', eventId: event.id, eventType: event.event }))
-    return { status: 'duplicate', message: `Event ${event.id} already processed` }
+  try {
+    const reserved = await reserveWebhookEvent(event.id)
+    if (!reserved) {
+      logger.info(JSON.stringify({ type: 'razorpay_webhook_duplicate', eventId: event.id, eventType: event.event }))
+      return { status: 'duplicate', message: `Event ${event.id} already processed` }
+    }
+  } catch (err: any) {
+    if (err?.name === 'RedisCircuitBreakerError') {
+      throw new RazorpayWebhookError('secret_not_configured', 503, 'Redis unavailable')
+    }
+    throw err
   }
-  markEventProcessed(event.id)
   logger.info(
     JSON.stringify({
       type: 'razorpay_webhook_processing',

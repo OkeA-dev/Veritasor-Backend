@@ -97,6 +97,10 @@ razorpayWebhookRouter.post('/', async (req: Request, res: Response) => {
         }),
       )
 
+      if (error.httpStatus === 503) {
+        return res.status(503).json({ error: error.message, code: error.code })
+      }
+
       return res.status(error.httpStatus).json({ error: error.message, code: error.code })
     }
 
