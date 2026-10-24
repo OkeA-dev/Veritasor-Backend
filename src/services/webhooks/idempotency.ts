@@ -1,5 +1,5 @@
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000
-const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000
+const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const DEFAULT_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000
 
 const DEFAULT_MEMORY_MAX_ENTRIES = 10000
@@ -234,7 +234,7 @@ export async function reserveWebhookEvent(eventId: string, ttlMs = DEFAULT_TTL_M
 
 export function checkTimestampTolerance(
   createdAt: number | undefined,
-  maxAgeMs = DEFAULT_MAX_AGE_MS,
+  maxAgeMs = resolveMaxAgeMs(),
   maxFutureSkewMs = DEFAULT_MAX_FUTURE_SKEW_MS
 ): { valid: boolean; reason?: string } {
   if (createdAt === undefined) return { valid: true }

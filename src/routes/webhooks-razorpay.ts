@@ -9,6 +9,7 @@ import {
 import { logger } from '../utils/logger.js'
 import { secretLoader, SecretNotFoundError } from '../utils/secret-loader.js'
 import { hasForbiddenKeys } from '../middleware/prototypePollution.js'
+import { BackoffError } from '../utils/backoff.js'
 
 export const razorpayWebhookRouter = Router()
 
@@ -87,12 +88,17 @@ razorpayWebhookRouter.post('/', async (req: Request, res: Response) => {
     const result = await handleRazorpayEvent(event)
     return res.status(200).json(result)
   } catch (error) {
-    if (error instanceof RazorpayWebhookError) {
+    let actualError: unknown = error
+    while (actualError instanceof BackoffError && actualError.cause) {
+      actualError = actualError.cause
+    }
+
+    if (actualError instanceof RazorpayWebhookError) {
       logger.warn(
         JSON.stringify({
           type: 'razorpay_webhook_rejected',
-          code: error.code,
-          statusCode: error.httpStatus,
+          code: actualError.code,
+          statusCode: actualError.httpStatus,
           correlationId,
         }),
       )
@@ -108,7 +114,7 @@ razorpayWebhookRouter.post('/', async (req: Request, res: Response) => {
       JSON.stringify({
         type: 'razorpay_webhook_failure',
         correlationId,
-        message: error instanceof Error ? error.message : 'Unknown webhook failure',
+        message: actualError instanceof Error ? actualError.message : 'Unknown webhook failure',
       }),
     )
 
